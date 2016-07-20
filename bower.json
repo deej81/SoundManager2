@@ -15,6 +15,7 @@
     "composer.json",
     "CONTRIBUTING.md",
     "package.js",
-    "package.json"
+    "package.json",
+    "gulpfile.js"
   ]
 }
