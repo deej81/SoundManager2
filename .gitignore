@@ -5,3 +5,4 @@ make-rollups.sh
 tmp
 .build.properties
 download
+node_modules

@@ -30,5 +30,11 @@
   "bugs": {
     "url": "https://github.com/scottschiller/SoundManager2/issues/"
   },
-  "homepage": "http://www.schillmania.com/projects/soundmanager2/"
+  "homepage": "http://www.schillmania.com/projects/soundmanager2/",
+  "devDependencies": {
+    "gulp": "^3.9.1",
+    "gulp-delete-lines": "0.0.7",
+    "gulp-minify": "0.0.13",
+    "gulp-rename": "^1.2.2"
+  }
 }
