@@ -8,7 +8,7 @@
  * Code provided under the BSD License:
  * http://schillmania.com/projects/soundmanager2/license.txt
  *
- * V2.97a.20150601
+ * V2.97a.20150601+DEV
  */
 
 /*global window, SM2_DEFER, sm2Debugger, console, document, navigator, setTimeout, setInterval, clearInterval, Audio, opera, module, define */
@@ -102,6 +102,7 @@ function SoundManager(smURL, smID) {
     'from': null,             // position to start playback within a sound (msec), default = beginning
     'loops': 1,               // how many times to repeat the sound (position will wrap around to 0, setPosition() will break out of loop when >0)
     'onid3': null,            // callback function for "ID3 data is added/available"
+    'onerror': null,          // callback function for "load failed" (or, playback/network/decode error under HTML5.)
     'onload': null,           // callback function for "load finished"
     'whileloading': null,     // callback function for "download progress update" (X of Y bytes received)
     'onplay': null,           // callback for "play" start
@@ -110,12 +111,12 @@ function SoundManager(smURL, smID) {
     'whileplaying': null,     // callback during play (position update)
     'onposition': null,       // object containing times and function callbacks for positions of interest
     'onstop': null,           // callback for "user stop"
-    'onfailure': null,        // callback function for when playing fails
     'onfinish': null,         // callback function for "sound finished playing"
     'multiShot': true,        // let sounds "restart" or layer on top of each other when played multiple times, rather than one-shot/one at a time
     'multiShotEvents': false, // fire multiple sound events (currently onfinish() only) when multiShot is enabled
     'position': null,         // offset (milliseconds) to seek to within loaded sound data.
     'pan': 0,                 // "pan" settings, left-to-right, -100 to 100
+    'playbackRate': 1,        // rate at which to play the sound (HTML5-only)
     'stream': true,           // allows playing before entire file has loaded (recommended)
     'to': null,               // position to end playback within a sound (msec), default = end
     'type': null,             // MIME-like hint for file pattern / canPlay() tests, eg. audio/mp3
@@ -131,6 +132,7 @@ function SoundManager(smURL, smID) {
      * merged into defaultOptions if flash 9 is being used
      */
 
+    'onfailure': null,        // callback function for when playing fails (Flash 9, MovieStar + RTMP-only)
     'isMovieStar': null,      // "MovieStar" MPEG4 audio mode. Null (default) = auto detect MP4, AAC etc. based on URL. true = force on, ignore URL
     'usePeakData': false,     // enable left/right channel peak (level) data
     'useWaveformData': false, // enable sound spectrum (raw waveform data) - NOTE: May increase CPU load.
@@ -200,7 +202,7 @@ function SoundManager(smURL, smID) {
 
   // dynamic attributes
 
-  this.versionNumber = 'V2.97a.20150601';
+  this.versionNumber = 'V2.97a.20150601+DEV';
   this.version = null;
   this.movieURL = null;
   this.altURL = null;
@@ -271,7 +273,7 @@ function SoundManager(smURL, smID) {
 
   var SMSound,
   sm2 = this, globalHTML5Audio = null, flash = null, sm = 'soundManager', smc = sm + ': ', h5 = 'HTML5::', id, ua = navigator.userAgent, wl = window.location.href.toString(), doc = document, doNothing, setProperties, init, fV, on_queue = [], debugOpen = true, debugTS, didAppend = false, appendSuccess = false, didInit = false, disabled = false, windowLoaded = false, _wDS, wdCount = 0, initComplete, mixin, assign, extraOptions, addOnEvent, processOnEvents, initUserOnload, delayWaitForEI, waitForEI, rebootIntoHTML5, setVersionInfo, handleFocus, strings, initMovie, domContentLoaded, winOnLoad, didDCLoaded, getDocument, createMovie, catchError, setPolling, initDebug, debugLevels = ['log', 'info', 'warn', 'error'], defaultFlashVersion = 8, disableObject, failSafely, normalizeMovieURL, oRemoved = null, oRemovedHTML = null, str, flashBlockHandler, getSWFCSS, swfCSS, toggleDebug, loopFix, policyFix, complain, idCheck, waitingForEI = false, initPending = false, startTimer, stopTimer, timerExecute, h5TimerCount = 0, h5IntervalTimer = null, parseURL, messages = [],
-  canIgnoreFlash, needsFlash = null, featureCheck, html5OK, html5CanPlay, html5Ext, html5Unload, domContentLoadedIE, testHTML5, event, slice = Array.prototype.slice, useGlobalHTML5Audio = false, lastGlobalHTML5URL, hasFlash, detectFlash, badSafariFix, html5_events, showSupport, flushMessages, wrapCallback, idCounter = 0, didSetup, msecScale = 1000,
+  canIgnoreFlash, needsFlash = null, featureCheck, html5OK, html5CanPlay, html5ErrorCodes, html5Ext, html5Unload, domContentLoadedIE, testHTML5, event, slice = Array.prototype.slice, useGlobalHTML5Audio = false, lastGlobalHTML5URL, hasFlash, detectFlash, badSafariFix, html5_events, showSupport, flushMessages, wrapCallback, idCounter = 0, didSetup, msecScale = 1000,
   is_iDevice = ua.match(/(ipad|iphone|ipod)/i), isAndroid = ua.match(/android/i), isIE = ua.match(/msie/i),
   isWebkit = ua.match(/webkit/i),
   isSafari = (ua.match(/safari/i) && !ua.match(/chrome/i)),
@@ -309,6 +311,22 @@ function SoundManager(smURL, smID) {
     'highPerf': 'high_performance',
     'flashDebug': 'flash_debug'
   };
+
+  /**
+   * HTML5 error codes, per W3C
+   * Error code 1, MEDIA_ERR_ABORTED: Client aborted download at user's request.
+   * Error code 2, MEDIA_ERR_NETWORK: A network error of some description caused the user agent to stop fetching the media resource, after the resource was established to be usable.
+   * Error code 3, MEDIA_ERR_DECODE: An error of some description occurred while decoding the media resource, after the resource was established to be usable.
+   * Error code 4, MEDIA_ERR_SRC_NOT_SUPPORTED: Media (audio file) not supported ("not usable.")
+   * Reference: http://www.whatwg.org/specs/web-apps/current-work/multipage/the-video-element.html#error-codes
+   */
+  html5ErrorCodes = [
+    null,
+    'MEDIA_ERR_ABORTED',
+    'MEDIA_ERR_NETWORK',
+    'MEDIA_ERR_DECODE',
+    'MEDIA_ERR_SRC_NOT_SUPPORTED'   
+  ];
 
   /**
    * basic HTML5 Audio() support test
@@ -762,6 +780,22 @@ function SoundManager(smURL, smID) {
   this.start = this.play;
 
   /**
+   * Calls the setPlaybackRate() method of a SMSound object by ID.
+   *
+   * @param {string} sID The ID of the sound
+   * @return {SMSound} The SMSound object
+   */
+
+  this.setPlaybackRate = function(sID, rate, allowOverride) {
+
+    if (!idCheck(sID)) {
+      return false;
+    }
+    return sm2.sounds[sID].setPlaybackRate(rate, allowOverride);
+
+  };
+
+  /**
    * Calls the setPosition() method of a SMSound object by ID.
    *
    * @param {string} sID The ID of the sound
@@ -1077,19 +1111,24 @@ function SoundManager(smURL, smID) {
       bNoDisable = false;
     }
 
+    // already disabled?
     if (disabled) {
       return false;
     }
 
     disabled = true;
+    
     _wDS('shutdown', 1);
 
     for (i = sm2.soundIDs.length - 1; i >= 0; i--) {
       disableObject(sm2.sounds[sm2.soundIDs[i]]);
     }
 
+    disableObject(sm2);
+
     // fire "complete", despite fail
     initComplete(bNoDisable);
+   
     event.remove(window, 'load', initUserOnload);
 
     return true;
@@ -2106,6 +2145,10 @@ function SoundManager(smURL, smID) {
         s.setVolume(s._iO.volume, true);
         s.setPan(s._iO.pan, true);
 
+        if (s._iO.playbackRate !== 1) {
+          s.setPlaybackRate(s._iO.playbackRate);
+        }
+
         if (!s.isHTML5) {
 
           startOK = flash._start(s.id, s._iO.loops || 1, (fV === 9 ? s.position : s.position / msecScale), s._iO.multiShot || false);
@@ -2309,6 +2352,38 @@ function SoundManager(smURL, smID) {
     this.getAutoPlay = function() {
 
       return s._iO.autoPlay;
+
+    };
+
+    /**
+     * Sets the playback rate of a sound (HTML5-only.)
+     *
+     * @param {number} playbackRate (+/-)
+     * @return {SMSound} The SMSound object
+     */
+
+    this.setPlaybackRate = function(playbackRate) {
+
+      // Per Mozilla, limit acceptable values to prevent playback from stopping (unless allowOverride is truthy.)
+      // https://developer.mozilla.org/en-US/Apps/Build/Audio_and_video_delivery/WebAudio_playbackRate_explained
+      var normalizedRate = Math.max(0.5, Math.min(4, playbackRate));
+
+      // <d>
+      if (normalizedRate !== playbackRate) {
+        sm2._wD(s.id + ': setPlaybackRate(' + playbackRate + '): limiting rate to ' + normalizedRate, 2);
+      }
+      // </d>
+
+      if (s.isHTML5) {
+        try {
+          s._iO.playbackRate = normalizedRate;
+          s._a.playbackRate = normalizedRate;
+        } catch(e) {
+          sm2._wD(s.id + ': setPlaybackRate(' + normalizedRate + ') failed: ' + e.message, 2);
+        }
+      }
+
+      return s;
 
     };
 
@@ -3223,6 +3298,11 @@ function SoundManager(smURL, smID) {
       s.readyState = (loadOK ? 3 : 2);
       s._onbufferchange(0);
 
+      if (!loadOK && !s.isHTML5) {
+        // note: no error code from Flash.
+        s._onerror();
+      }
+
       if (s._iO.onload) {
         wrapCallback(s, function() {
           s._iO.onload.apply(s, [loadOK]);
@@ -3230,6 +3310,17 @@ function SoundManager(smURL, smID) {
       }
 
       return true;
+
+    };
+
+    this._onerror = function(errorCode, description) {
+
+      // http://www.whatwg.org/specs/web-apps/current-work/multipage/the-video-element.html#error-codes
+      if (s._iO.onerror) {
+        wrapCallback(s, function() {
+          s._iO.onerror.apply(s, [errorCode, description]);
+        });
+      }
 
     };
 
@@ -3979,17 +4070,10 @@ function SoundManager(smURL, smID) {
 
     error: html5_event(function() {
 
-      sm2._wD(this._s.id + ': HTML5 error, code ' + this.error.code);
-      /**
-       * HTML5 error codes, per W3C
-       * Error 1: Client aborted download at user's request.
-       * Error 2: Network error after load started.
-       * Error 3: Decoding issue.
-       * Error 4: Media (audio file) not supported.
-       * Reference: http://www.whatwg.org/specs/web-apps/current-work/multipage/the-video-element.html#error-codes
-       */
-      // call load with error state?
+      var description = (html5ErrorCodes[this.error.code] || null);
+      sm2._wD(this._s.id + ': HTML5 error, code ' + this.error.code + (description ? ' (' + description + ')' : ''));
       this._s._onload(false);
+      this._s._onerror(this.error.code, description);
 
     }),
 
@@ -6304,7 +6388,7 @@ if (typeof module === 'object' && module && typeof module.exports === 'object') 
     return {
       constructor: SoundManager,
       getInstance: getInstance
-    }
+    };
   });
 
 }
