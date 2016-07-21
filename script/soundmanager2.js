@@ -202,7 +202,7 @@ function SoundManager(smURL, smID) {
 
   // dynamic attributes
 
-  this.versionNumber = 'V2.97a.20150601+DEV';
+  this.versionNumber = 'V2.97.20160721';
   this.version = null;
   this.movieURL = null;
   this.altURL = null;
@@ -783,6 +783,8 @@ function SoundManager(smURL, smID) {
    * Calls the setPlaybackRate() method of a SMSound object by ID.
    *
    * @param {string} sID The ID of the sound
+   * @param {number} rate The play rate to set
+   * @param {boolean} allowOverride allow values out of bounds for rate
    * @return {SMSound} The SMSound object
    */
 
